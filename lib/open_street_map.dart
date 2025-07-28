@@ -12,6 +12,17 @@ class OpenStreetMap extends StatefulWidget {
 
 class _OpenStreetMapState extends State<OpenStreetMap> {
   final MapController _mapController = MapController();
+  LatLng? _currentLocation;
+  Future<void> _userCurrentLocation() async {
+    if(_currentLocation != null){
+      _mapController.move(_currentLocation!, 15);
+    } else{
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Current Location not available"),),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -47,6 +58,16 @@ class _OpenStreetMapState extends State<OpenStreetMap> {
           ]
           )
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        elevation: 0,
+          onPressed: _userCurrentLocation,
+        backgroundColor: Colors.blue,
+        child: Icon(
+          Icons.my_location,
+          size: 30,
+          color: Colors.white,
+        ),
       ),
     );
   }
