@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_location_marker/flutter_map_location_marker.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 class OpenStreetMap extends StatefulWidget {
@@ -12,14 +15,79 @@ class OpenStreetMap extends StatefulWidget {
 
 class _OpenStreetMapState extends State<OpenStreetMap> {
   final MapController _mapController = MapController();
-  LatLng? _currentLocation;
-  Future<void> _userCurrentLocation() async {
-    if(_currentLocation != null){
-      _mapController.move(_currentLocation!, 15);
-    } else{
+
+  // ValueNotifier to hold current location marker position
+  final ValueNotifier<LocationMarkerPosition> _locationPositionNotifier =
+  ValueNotifier<LocationMarkerPosition>(
+    const LocationMarkerPosition(
+      latitude: 23.8103,
+      longitude: 90.4125,
+      accuracy: 0,
+    ),
+  );
+
+  StreamSubscription<Position>? _positionSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _startListeningLocation();
+  }
+
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    _locationPositionNotifier.dispose();
+    super.dispose();
+  }
+
+  void _startListeningLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Current Location not available"),),
+          const SnackBar(content: Text('Location services are disabled.')));
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied.')));
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Location permission permanently denied.')));
+      return;
+    }
+
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((position) {
+      final locPos = LocationMarkerPosition(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
       );
+      _locationPositionNotifier.value = locPos;
+    });
+  }
+
+  Future<void> _goToCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition();
+      final userLocation = LatLng(position.latitude, position.longitude);
+      _mapController.move(userLocation, 15);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to get current location')));
     }
   }
 
@@ -27,47 +95,46 @@ class _OpenStreetMapState extends State<OpenStreetMap> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        foregroundColor: Colors.white,
-        title: Text('Disha'),
+        title: const Text('Disha'),
         centerTitle: true,
         backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
       ),
-      body: Stack(
+      body: FlutterMap(
+        mapController: _mapController,
+        options: MapOptions(
+          initialCenter: const LatLng(23.8103, 90.4125),
+          initialZoom: 10,
+        ),
         children: [
-          FlutterMap(
-            mapController: _mapController,
-          options: MapOptions(
-            initialCenter: LatLng(0, 0),
-            initialZoom: 2,
-            minZoom: 0,
-            maxZoom: 100,
+          TileLayer(
+            urlTemplate:
+            'https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key=CA2SB7JRT4tDeoi2xAtd',
+            userAgentPackageName: 'com.hasib.disha_app',
           ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            ),
-            CurrentLocationLayer(
-              style: LocationMarkerStyle(
-                marker: DefaultLocationMarker(
-                  child: Icon(Icons.location_pin, color: Colors.white,),
+
+          // Listen to ValueNotifier to update location marker position
+          ValueListenableBuilder<LocationMarkerPosition>(
+            valueListenable: _locationPositionNotifier,
+            builder: (context, position, _) {
+              return LocationMarkerLayer(
+                position: position,
+                style: const LocationMarkerStyle(
+                  marker: DefaultLocationMarker(
+                    child: Icon(Icons.location_pin, color: Colors.white),
+                  ),
+                  markerSize: Size(30, 30),
+                  markerDirection: MarkerDirection.heading,
                 ),
-                markerSize: Size(30, 30),
-                markerDirection: MarkerDirection.heading,
-              ),
-            ),
-          ]
-          )
+              );
+            },
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        elevation: 0,
-          onPressed: _userCurrentLocation,
+        onPressed: _goToCurrentLocation,
         backgroundColor: Colors.blue,
-        child: Icon(
-          Icons.my_location,
-          size: 30,
-          color: Colors.white,
-        ),
+        child: const Icon(Icons.my_location, color: Colors.white, size: 30),
       ),
     );
   }
